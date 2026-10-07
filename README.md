@@ -21,6 +21,25 @@ Los equipos están en `inventario.yaml`. Cada uno lleva `nombre`, `host`,
 `device_type`, `usuario` y `rol` (`lectura` o `escritura`). El archivo no
 contiene contraseñas.
 
+## Variables de entorno (contraseñas)
+
+La contraseña de cada equipo se toma de una variable `LAB_PASS_<NOMBRE>`, con
+el nombre del equipo en mayúsculas y los guiones cambiados por `_`:
+
+```bash
+export LAB_PASS_MT_LAB='clave-del-mikrotik'
+```
+
+Si la variable no existe, el script pide la clave al ejecutarse (no se muestra
+en pantalla).
+
+## Ejecución
+
+```bash
+source env/bin/activate
+python lab1_inventario.py
+```
+
 ## Uso de IA
 
 Usé Claude (asistente de IA de Anthropic) como apoyo para armar la estructura
