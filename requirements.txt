@@ -1,0 +1,6 @@
+# Dependencias del Laboratorio 1 (ITIEL-13 Redes Programables)
+# Instalación, con el venv activado:
+#   pip install -r requirements.txt
+
+netmiko>=4.7.0
+pyyaml>=6.0

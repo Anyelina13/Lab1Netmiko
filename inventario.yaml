@@ -1,0 +1,13 @@
+# Inventario de equipos del laboratorio GNS3 (red 10.60.30.0/24).
+# Aquí NO van contraseñas: se leen de variables de entorno LAB_PASS_<NOMBRE>
+# (ej. mt-lab -> LAB_PASS_MT_LAB) o se piden al ejecutar el script.
+#
+# rol: lectura   -> solo se consulta el estado
+# rol: escritura -> además se permite aplicar el cambio de configuración
+
+equipos:
+  - nombre: mt-lab
+    host: 10.60.30.202
+    device_type: mikrotik_routeros
+    usuario: labssh
+    rol: escritura

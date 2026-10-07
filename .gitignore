@@ -1,0 +1,10 @@
+# Entorno virtual y archivos temporales de Python
+env/
+venv/
+__pycache__/
+*.pyc
+
+# Archivos locales con claves o variables de entorno (nunca se suben)
+.env
+*.env
+claves.txt
