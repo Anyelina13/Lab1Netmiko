@@ -12,8 +12,14 @@ import sys
 import getpass
 
 import yaml
+from netmiko import ConnectHandler
+from netmiko.exceptions import (
+    NetmikoTimeoutException,
+    NetmikoAuthenticationException,
+)
 
 ARCHIVO_INVENTARIO = "inventario.yaml"
+CARPETA_LOGS = "logs"
 
 # Campos que debe traer cada equipo del inventario
 CAMPOS_OBLIGATORIOS = ["nombre", "host", "device_type", "usuario", "rol"]
@@ -60,6 +66,45 @@ def obtener_clave(equipo):
     )
 
 
+def conectar_equipo(equipo, clave):
+    """Se conecta por SSH a un equipo y devuelve un diccionario con el resultado.
+
+    Los errores se atrapan aquí mismo, por equipo: si uno falla se anota el
+    mensaje en "estado" y el ciclo de main() sigue con los demás.
+    """
+    resultado = {
+        "nombre": equipo["nombre"],
+        "host": equipo["host"],
+        "device_type": equipo["device_type"],
+        "estado": "ok",
+    }
+
+    parametros = {
+        "device_type": equipo["device_type"],
+        "host": equipo["host"],
+        "username": equipo["usuario"],
+        "password": clave,
+        "port": equipo.get("puerto", 22),
+        # Un log por equipo con todo lo que se envió y recibió en la sesión
+        "session_log": os.path.join(CARPETA_LOGS, f"{equipo['nombre']}.log"),
+        "conn_timeout": 15,
+    }
+
+    try:
+        # with = la sesión se cierra siempre, aunque haya un error adentro
+        with ConnectHandler(**parametros) as conexion:
+            resultado["prompt"] = conexion.find_prompt()
+    # De lo más específico a lo más general
+    except NetmikoTimeoutException:
+        resultado["estado"] = "error: timeout, no hubo respuesta del equipo (IP, SSH o red)"
+    except NetmikoAuthenticationException:
+        resultado["estado"] = f"error: autenticación, usuario o clave de '{equipo['usuario']}' incorrectos"
+    except Exception as error:
+        resultado["estado"] = f"error: {type(error).__name__}: {error}"
+
+    return resultado
+
+
 def main():
     try:
         equipos = cargar_inventario(ARCHIVO_INVENTARIO)
@@ -67,16 +112,22 @@ def main():
         print(f"[ERROR] No pude leer el inventario: {error}")
         sys.exit(1)
 
-    print(f"Equipos en el inventario: {len(equipos)}")
+    os.makedirs(CARPETA_LOGS, exist_ok=True)
+
+    resultados = []
     for equipo in equipos:
+        print(f"Conectando a {equipo['nombre']} ({equipo['host']})...")
         clave = obtener_clave(equipo)
-        # La clave nunca se imprime, solo se confirma que ya se tiene
-        estado_clave = "lista" if clave else "vacía"
-        print(
-            f"  - {equipo['nombre']} ({equipo['host']}) "
-            f"{equipo['device_type']} usuario={equipo['usuario']} "
-            f"rol={equipo['rol']} clave={estado_clave}"
-        )
+        resultado = conectar_equipo(equipo, clave)
+        resultados.append(resultado)
+
+        if resultado["estado"] == "ok":
+            print(f"  [OK] Conectado. Prompt: {resultado['prompt']}")
+        else:
+            print(f"  [FALLO] {resultado['estado']}")
+
+    correctos = sum(1 for r in resultados if r["estado"] == "ok")
+    print(f"\nListo: {correctos} de {len(resultados)} equipos conectados.")
 
 
 if __name__ == "__main__":

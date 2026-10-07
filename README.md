@@ -40,6 +40,17 @@ source env/bin/activate
 python lab1_inventario.py
 ```
 
+El script recorre todos los equipos del inventario. Si alguno no responde o la
+clave es incorrecta, muestra el error de ese equipo y continúa con los demás.
+En `logs/` queda un archivo por equipo (`logs/mt-lab.log`) con la sesión SSH.
+
+Para probar el manejo de errores sin tocar el inventario:
+
+```bash
+export LAB_PASS_MT_LAB=mala
+python lab1_inventario.py
+```
+
 ## Uso de IA
 
 Usé Claude (asistente de IA de Anthropic) como apoyo para armar la estructura
