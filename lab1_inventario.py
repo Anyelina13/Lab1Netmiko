@@ -221,6 +221,34 @@ def guardar_reporte(resultados, ruta):
         json.dump(reporte, archivo, indent=2, ensure_ascii=False)
 
 
+def imprimir_tabla(resultados):
+    """Resumen en consola: equipo, IP, estado, interfaces y gateway."""
+    encabezado = ["Equipo", "IP", "Estado", "Interfaces", "Gateway"]
+    filas = []
+    for r in resultados:
+        if r["estado"] == "ok":
+            filas.append([r["nombre"], r["host"], "ok",
+                          str(len(r["interfaces"])), r["gateway"] or "-"])
+        else:
+            # El error completo ya va en el JSON, aquí solo una versión corta
+            estado = r["estado"].split(",")[0][:40]
+            filas.append([r["nombre"], r["host"], estado, "-", "-"])
+
+    # El ancho de cada columna es el del texto más largo que tenga
+    anchos = [max(len(fila[i]) for fila in [encabezado] + filas)
+              for i in range(len(encabezado))]
+    separador = "+".join("-" * (ancho + 2) for ancho in anchos)
+
+    def formato(fila):
+        return "|".join(f" {valor:<{ancho}} " for valor, ancho in zip(fila, anchos))
+
+    print()
+    print(formato(encabezado))
+    print(separador)
+    for fila in filas:
+        print(formato(fila))
+
+
 def main():
     try:
         equipos = cargar_inventario(ARCHIVO_INVENTARIO)
@@ -244,6 +272,7 @@ def main():
             print(f"  [FALLO] {resultado['estado']}")
 
     guardar_reporte(resultados, ARCHIVO_REPORTE)
+    imprimir_tabla(resultados)
 
     correctos = sum(1 for r in resultados if r["estado"] == "ok")
     print(f"\nListo: {correctos} de {len(resultados)} equipos conectados.")
