@@ -153,6 +153,19 @@ COMANDOS_ESTADO = {
 }
 
 
+def recolectar_estado(conexion, device_type):
+    """Manda los comandos de lectura del device_type y devuelve un dict."""
+    comandos = COMANDOS_ESTADO.get(device_type)
+    if comandos is None:
+        raise ValueError(f"No tengo comandos definidos para {device_type}")
+
+    estado = {}
+    for dato, (comando, procesar) in comandos.items():
+        salida = conexion.send_command(comando)
+        estado[dato] = procesar(salida)
+    return estado
+
+
 def conectar_equipo(equipo, clave):
     """Se conecta por SSH a un equipo y devuelve un diccionario con el resultado.
 
@@ -181,6 +194,7 @@ def conectar_equipo(equipo, clave):
         # with = la sesión se cierra siempre, aunque haya un error adentro
         with ConnectHandler(**parametros) as conexion:
             resultado["prompt"] = conexion.find_prompt()
+            resultado.update(recolectar_estado(conexion, equipo["device_type"]))
     # De lo más específico a lo más general
     except NetmikoTimeoutException:
         resultado["estado"] = "error: timeout, no hubo respuesta del equipo (IP, SSH o red)"
@@ -209,7 +223,8 @@ def main():
         resultados.append(resultado)
 
         if resultado["estado"] == "ok":
-            print(f"  [OK] Conectado. Prompt: {resultado['prompt']}")
+            print(f"  [OK] {resultado['identidad']} - {len(resultado['interfaces'])} "
+                  f"interfaces, gateway {resultado['gateway'] or '(ninguno)'}")
         else:
             print(f"  [FALLO] {resultado['estado']}")
 
