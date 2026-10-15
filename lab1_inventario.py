@@ -53,6 +53,25 @@ def cargar_inventario(ruta):
     return equipos
 
 
+def cargar_estudiante(ruta):
+    """Lee el número de lista N y el nombre del bloque 'estudiante' del YAML.
+
+    Devuelve None si no están, y en ese caso no se cambia nada en los equipos.
+    """
+    with open(ruta, encoding="utf-8") as archivo:
+        datos = yaml.safe_load(archivo) or {}
+
+    estudiante = datos.get("estudiante") or {}
+    numero = estudiante.get("numero_lista")
+    nombre = estudiante.get("nombre")
+    if numero is None or not nombre:
+        return None
+    # N se usa en la IP 10.253.0.N, entonces tiene que ser un host válido
+    if not isinstance(numero, int) or not 1 <= numero <= 254:
+        raise ValueError(f"numero_lista debe ser un entero entre 1 y 254, no {numero!r}")
+    return {"numero_lista": numero, "nombre": nombre}
+
+
 def nombre_variable(nombre_equipo):
     """mt-lab -> LAB_PASS_MT_LAB (mayúsculas y guiones como guion bajo)."""
     return "LAB_PASS_" + nombre_equipo.upper().replace("-", "_")
@@ -156,6 +175,37 @@ COMANDOS_ESTADO = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Cambio de configuración en el MikroTik (solo rol: escritura)
+# ---------------------------------------------------------------------------
+
+def objetos_propios(estudiante):
+    """Nombre del bridge, IP y comentario que me tocan según mi número N."""
+    n = estudiante["numero_lista"]
+    return {
+        "bridge": f"lo-ssh-{n}",
+        "ip": f"10.253.0.{n}/32",
+        "comentario": f"Lab1 {estudiante['nombre']}",
+    }
+
+
+def consultar_loopback(conexion, objetos):
+    """Revisa qué existe ya en el router. Solo lectura, no cambia nada.
+
+    Los print llevan 'where' con mi nombre exacto para no traer (ni tocar)
+    los objetos de los demás.
+    """
+    bridge = objetos["bridge"]
+    bridges = terse_a_lista(conexion.send_command(
+        f'/interface bridge print terse where name="{bridge}"'))
+    direcciones = terse_a_lista(conexion.send_command(
+        f'/ip address print terse where interface="{bridge}"'))
+    return {
+        "bridge": len(bridges) > 0,
+        "ip": any(d.get("address") == objetos["ip"] for d in direcciones),
+    }
+
+
 def recolectar_estado(conexion, device_type):
     """Manda los comandos de lectura del device_type y devuelve un dict."""
     comandos = COMANDOS_ESTADO.get(device_type)
@@ -169,8 +219,11 @@ def recolectar_estado(conexion, device_type):
     return estado
 
 
-def conectar_equipo(equipo, clave):
+def conectar_equipo(equipo, clave, estudiante=None):
     """Se conecta por SSH a un equipo y devuelve un diccionario con el resultado.
+
+    Si el equipo es un MikroTik con rol escritura y se conoce el estudiante,
+    además revisa la loopback lo-ssh-<N>.
 
     Los errores se atrapan aquí mismo, por equipo: si uno falla se anota el
     mensaje en "estado" y el ciclo de main() sigue con los demás.
@@ -199,6 +252,11 @@ def conectar_equipo(equipo, clave):
         with ConnectHandler(**parametros) as conexion:
             resultado["prompt"] = conexion.find_prompt()
             resultado.update(recolectar_estado(conexion, equipo["device_type"]))
+
+            if (equipo["rol"] == "escritura" and estudiante
+                    and equipo["device_type"] == "mikrotik_routeros"):
+                resultado["loopback"] = consultar_loopback(
+                    conexion, objetos_propios(estudiante))
     # De lo más específico a lo más general
     except NetmikoTimeoutException:
         resultado["estado"] = "error: timeout, no hubo respuesta del equipo (IP, SSH o red)"
@@ -252,9 +310,14 @@ def imprimir_tabla(resultados):
 def main():
     try:
         equipos = cargar_inventario(ARCHIVO_INVENTARIO)
+        estudiante = cargar_estudiante(ARCHIVO_INVENTARIO)
     except (OSError, ValueError, yaml.YAMLError) as error:
         print(f"[ERROR] No pude leer el inventario: {error}")
         sys.exit(1)
+
+    if estudiante is None:
+        print("[AVISO] Falta 'estudiante' (numero_lista y nombre) en el inventario: "
+              "no se va a tocar la configuración de ningún equipo.")
 
     os.makedirs(CARPETA_LOGS, exist_ok=True)
 
@@ -262,12 +325,14 @@ def main():
     for equipo in equipos:
         print(f"Conectando a {equipo['nombre']} ({equipo['host']})...")
         clave = obtener_clave(equipo)
-        resultado = conectar_equipo(equipo, clave)
+        resultado = conectar_equipo(equipo, clave, estudiante)
         resultados.append(resultado)
 
         if resultado["estado"] == "ok":
             print(f"  [OK] {resultado['identidad']} - {len(resultado['interfaces'])} "
                   f"interfaces, gateway {resultado['gateway'] or '(ninguno)'}")
+            if "loopback" in resultado:
+                print(f"  Loopback propia: {resultado['loopback']}")
         else:
             print(f"  [FALLO] {resultado['estado']}")
 

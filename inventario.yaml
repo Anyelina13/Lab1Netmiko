@@ -5,6 +5,14 @@
 # rol: lectura   -> solo se consulta el estado
 # rol: escritura -> además se permite aplicar el cambio de configuración
 
+# Datos para el cambio de configuración (R6). Todo lo que se crea en el
+# MikroTik lleva el número de lista N para no pisar lo de otros estudiantes:
+#   bridge lo-ssh-<N> con IP 10.253.0.<N>/32
+# Mientras esto no esté lleno, el script solo consulta y no cambia nada.
+estudiante:
+  numero_lista:     # N (entero, ej. 7)
+  nombre:           # va en el comentario de los objetos
+
 equipos:
   - nombre: mt-lab
     host: 10.60.30.202
