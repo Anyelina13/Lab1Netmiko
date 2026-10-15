@@ -3,7 +3,9 @@
 Curso ITIEL-13 Redes Programables (Grupo 01), III periodo 2026.
 
 El script lee los equipos desde `inventario.yaml`, se conecta a cada uno por SSH
-con Netmiko y guarda el registro de la sesión en la carpeta `logs/`.
+con Netmiko, recolecta su estado como datos estructurados y lo guarda en
+`reporte_estado.json`. En el MikroTik (rol `escritura`) además deja creada una
+loopback propia sin duplicar nada. El registro de cada sesión queda en `logs/`.
 
 ## Instalación
 
@@ -20,6 +22,18 @@ pip install -r requirements.txt
 Los equipos están en `inventario.yaml`. Cada uno lleva `nombre`, `host`,
 `device_type`, `usuario` y `rol` (`lectura` o `escritura`). El archivo no
 contiene contraseñas.
+
+Al inicio del archivo va el bloque `estudiante`, con el número de lista N y el
+nombre. Se usa para armar los objetos propios en el MikroTik:
+
+```yaml
+estudiante:
+  numero_lista: 7
+  nombre: Mi Nombre
+```
+
+Si el bloque está vacío, el script solo consulta y no cambia la configuración
+de ningún equipo.
 
 ## Variables de entorno (contraseñas)
 
@@ -50,6 +64,31 @@ Para probar el manejo de errores sin tocar el inventario:
 export LAB_PASS_MT_LAB=mala
 python lab1_inventario.py
 ```
+
+## Qué hace con cada equipo
+
+**Estado (solo lectura).** Los comandos están en el diccionario
+`COMANDOS_ESTADO`, agrupados por `device_type`. Para el MikroTik se consulta:
+
+| Dato | Comando |
+|---|---|
+| Nombre del equipo | `/system identity print` |
+| Tiempo encendido y versión | `/system resource print` |
+| Interfaces con IP | `/ip address print terse` |
+| Ruta por defecto | `/ip route print terse where dst-address=0.0.0.0/0` |
+
+Cada salida se convierte en diccionario o lista antes de guardarla.
+
+**Reporte.** Al terminar se genera `reporte_estado.json`, con la fecha/hora y
+el estado de cada equipo (`ok` o el mensaje de error), y se imprime una tabla
+con equipo, IP, estado, cantidad de interfaces y gateway.
+
+**Cambio de configuración (solo `rol: escritura`).** Se asegura el bridge
+`lo-ssh-<N>` con la IP `10.253.0.<N>/32` y un comentario con el nombre. Primero
+se consulta si existe y solo se crea lo que falta; después se vuelve a
+consultar para verificar. En una segunda ejecución sale `sin cambios`. Las
+consultas filtran por el nombre exacto, así que no se tocan objetos de otros
+estudiantes.
 
 ## Uso de IA
 
