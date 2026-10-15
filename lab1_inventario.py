@@ -8,6 +8,7 @@ Uso:
 """
 
 import os
+import re
 import sys
 import getpass
 
@@ -64,6 +65,92 @@ def obtener_clave(equipo):
     return getpass.getpass(
         f"Contraseña de '{equipo['usuario']}' en {equipo['nombre']} ({variable} no definida): "
     )
+
+
+# ---------------------------------------------------------------------------
+# Lectura de la salida de los equipos
+# ---------------------------------------------------------------------------
+
+def texto_a_dict(texto):
+    """Convierte líneas 'clave: valor' (ej. /system resource print) en dict."""
+    datos = {}
+    for linea in texto.splitlines():
+        if ":" not in linea:
+            continue
+        clave, valor = linea.split(":", 1)
+        datos[clave.strip()] = valor.strip()
+    return datos
+
+
+# clave=valor, donde el valor puede tener espacios (ej. comment=Mi equipo)
+PATRON_TERSE = re.compile(r"([\w.-]+)=(.*?)(?=\s+[\w.-]+=|$)")
+
+
+def terse_a_lista(texto):
+    """Convierte la salida de 'print terse' de RouterOS en una lista de dicts.
+
+    Cada línea es un registro, por ejemplo:
+        0   address=10.60.30.202/24 network=10.60.30.0 interface=ether1
+    Lo que va antes del primer 'clave=' es el número y las banderas (X, D, A...).
+    """
+    registros = []
+    for linea in texto.splitlines():
+        linea = linea.strip()
+        if "=" not in linea:
+            continue
+        registro = dict(PATRON_TERSE.findall(linea))
+        inicio = linea[: linea.index("=")].rsplit(" ", 1)[0]
+        partes = inicio.split()
+        if partes and partes[0].isdigit():
+            registro["flags"] = "".join(partes[1:])
+        registros.append(registro)
+    return registros
+
+
+def mikrotik_identidad(texto):
+    return texto_a_dict(texto).get("name", "")
+
+
+def mikrotik_recursos(texto):
+    recursos = texto_a_dict(texto)
+    return {
+        "uptime": recursos.get("uptime", ""),
+        "version": recursos.get("version", ""),
+    }
+
+
+def mikrotik_interfaces(texto):
+    interfaces = []
+    for registro in terse_a_lista(texto):
+        interfaces.append({
+            "interfaz": registro.get("interface", ""),
+            "ip": registro.get("address", ""),
+            "deshabilitada": "X" in registro.get("flags", ""),
+        })
+    return interfaces
+
+
+def mikrotik_ruta_defecto(texto):
+    rutas = terse_a_lista(texto)
+    # Si hay varias, prefiero la activa (bandera A)
+    activas = [r for r in rutas if "A" in r.get("flags", "")]
+    ruta = (activas or rutas or [{}])[0]
+    return ruta.get("gateway", "")
+
+
+# Comandos de lectura por device_type: dato -> (comando, función que lo procesa).
+# Para otro fabricante basta con agregar su entrada aquí.
+COMANDOS_ESTADO = {
+    "mikrotik_routeros": {
+        "identidad": ("/system identity print", mikrotik_identidad),
+        "recursos": ("/system resource print", mikrotik_recursos),
+        "interfaces": ("/ip address print terse", mikrotik_interfaces),
+        "gateway": (
+            "/ip route print terse where dst-address=0.0.0.0/0",
+            mikrotik_ruta_defecto,
+        ),
+    },
+}
 
 
 def conectar_equipo(equipo, clave):
