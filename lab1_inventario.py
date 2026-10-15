@@ -206,6 +206,37 @@ def consultar_loopback(conexion, objetos):
     }
 
 
+def asegurar_loopback(conexion, estudiante):
+    """Deja creada mi loopback lo-ssh-<N> con su IP, sin duplicar nada.
+
+    1. Consulta qué existe.
+    2. Manda solo los comandos de lo que falta (si no falta nada, no manda nada).
+    3. Vuelve a consultar para verificar que el cambio quedó.
+    """
+    objetos = objetos_propios(estudiante)
+    antes = consultar_loopback(conexion, objetos)
+
+    comandos = []
+    if not antes["bridge"]:
+        comandos.append(
+            f'/interface bridge add name="{objetos["bridge"]}" '
+            f'comment="{objetos["comentario"]}"')
+    if not antes["ip"]:
+        comandos.append(
+            f'/ip address add address="{objetos["ip"]}" '
+            f'interface="{objetos["bridge"]}" comment="{objetos["comentario"]}"')
+
+    if not comandos:
+        return {"cambio": "sin cambios", **objetos}
+
+    conexion.send_config_set(comandos)
+
+    despues = consultar_loopback(conexion, objetos)
+    if not (despues["bridge"] and despues["ip"]):
+        raise RuntimeError(f"El cambio no quedó aplicado en el router: {despues}")
+    return {"cambio": "creado", "comandos": comandos, **objetos}
+
+
 def recolectar_estado(conexion, device_type):
     """Manda los comandos de lectura del device_type y devuelve un dict."""
     comandos = COMANDOS_ESTADO.get(device_type)
@@ -255,8 +286,7 @@ def conectar_equipo(equipo, clave, estudiante=None):
 
             if (equipo["rol"] == "escritura" and estudiante
                     and equipo["device_type"] == "mikrotik_routeros"):
-                resultado["loopback"] = consultar_loopback(
-                    conexion, objetos_propios(estudiante))
+                resultado["configuracion"] = asegurar_loopback(conexion, estudiante)
     # De lo más específico a lo más general
     except NetmikoTimeoutException:
         resultado["estado"] = "error: timeout, no hubo respuesta del equipo (IP, SSH o red)"
@@ -331,8 +361,9 @@ def main():
         if resultado["estado"] == "ok":
             print(f"  [OK] {resultado['identidad']} - {len(resultado['interfaces'])} "
                   f"interfaces, gateway {resultado['gateway'] or '(ninguno)'}")
-            if "loopback" in resultado:
-                print(f"  Loopback propia: {resultado['loopback']}")
+            if "configuracion" in resultado:
+                config = resultado["configuracion"]
+                print(f"  Configuración {config['bridge']} ({config['ip']}): {config['cambio']}")
         else:
             print(f"  [FALLO] {resultado['estado']}")
 
