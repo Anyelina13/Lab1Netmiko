@@ -11,6 +11,8 @@ import os
 import re
 import sys
 import getpass
+import json
+from datetime import datetime
 
 import yaml
 from netmiko import ConnectHandler
@@ -21,6 +23,7 @@ from netmiko.exceptions import (
 
 ARCHIVO_INVENTARIO = "inventario.yaml"
 CARPETA_LOGS = "logs"
+ARCHIVO_REPORTE = "reporte_estado.json"
 
 # Campos que debe traer cada equipo del inventario
 CAMPOS_OBLIGATORIOS = ["nombre", "host", "device_type", "usuario", "rol"]
@@ -176,6 +179,7 @@ def conectar_equipo(equipo, clave):
         "nombre": equipo["nombre"],
         "host": equipo["host"],
         "device_type": equipo["device_type"],
+        "fecha": datetime.now().isoformat(timespec="seconds"),
         "estado": "ok",
     }
 
@@ -206,6 +210,17 @@ def conectar_equipo(equipo, clave):
     return resultado
 
 
+def guardar_reporte(resultados, ruta):
+    """Guarda la lista de resultados en un JSON legible."""
+    reporte = {
+        "generado": datetime.now().isoformat(timespec="seconds"),
+        "equipos": resultados,
+    }
+    with open(ruta, "w", encoding="utf-8") as archivo:
+        # ensure_ascii=False para que las tildes se vean bien en el archivo
+        json.dump(reporte, archivo, indent=2, ensure_ascii=False)
+
+
 def main():
     try:
         equipos = cargar_inventario(ARCHIVO_INVENTARIO)
@@ -228,8 +243,11 @@ def main():
         else:
             print(f"  [FALLO] {resultado['estado']}")
 
+    guardar_reporte(resultados, ARCHIVO_REPORTE)
+
     correctos = sum(1 for r in resultados if r["estado"] == "ok")
     print(f"\nListo: {correctos} de {len(resultados)} equipos conectados.")
+    print(f"Reporte guardado en {ARCHIVO_REPORTE}")
 
 
 if __name__ == "__main__":
