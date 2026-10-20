@@ -17,6 +17,30 @@ source env/bin/activate
 pip install -r requirements.txt
 ```
 
+`requirements.txt` fija `paramiko<4` porque el Cisco IOS 12.4 solo acepta
+algoritmos SSH con SHA-1 (`diffie-hellman-group14-sha1`), que paramiko 4 ya
+no trae.
+
+## Mi laboratorio (GNS3 local)
+
+La ejecución de `reporte_estado.json` y `logs/` se hizo en mi propia
+topología de GNS3, armada igual que la del enunciado:
+
+| Equipo | IP | Usuario |
+|---|---|---|
+| MikroTik CHR 7.18.2 (`ether2`) | 10.60.30.202/24 | `lab-ssh` (grupo con lectura/escritura y rest-api) |
+| Cisco c7200 IOS 12.4 (`Gi1/0`) | 10.60.30.203/24 | `lab-ssh` (privilegio 1, solo lectura) |
+| Mi Linux (interfaz `tap-lab`, nube "Internet") | 10.60.30.1/24 | — |
+
+La interfaz `tap-lab` se crea en el Linux antes de abrir el proyecto (se
+pierde al reiniciar):
+
+```bash
+sudo ip tuntap add dev tap-lab mode tap user $USER
+sudo ip addr add 10.60.30.1/24 dev tap-lab
+sudo ip link set tap-lab up
+```
+
 ## Inventario
 
 Los equipos están en `inventario.yaml`. Cada uno lleva `nombre`, `host`,
@@ -152,7 +176,7 @@ Estructura de `reporte_estado.json` (valores de ejemplo):
     {
       "nombre": "cisco-lab",
       "host": "10.60.30.203",
-      "estado": "error: autenticación, usuario o clave de 'labssh' incorrectos"
+      "estado": "error: autenticación, usuario o clave de 'lab-ssh' incorrectos"
     }
   ]
 }

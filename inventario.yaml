@@ -10,19 +10,19 @@
 #   bridge lo-ssh-<N> con IP 10.253.0.<N>/32
 # Mientras esto no esté lleno, el script solo consulta y no cambia nada.
 estudiante:
-  numero_lista:     # N (entero, ej. 7)
-  nombre:           # va en el comentario de los objetos
+  numero_lista: 10   # N (entero)
+  nombre: Anyelina   # va en el comentario de los objetos
 
 equipos:
   - nombre: mt-lab
     host: 10.60.30.202
     device_type: mikrotik_routeros
-    usuario: labssh
+    usuario: lab-ssh
     rol: escritura
 
   # Extra multivendor: el Cisco es compartido y solo se consulta
   - nombre: cisco-lab
     host: 10.60.30.203
     device_type: cisco_ios
-    usuario: labssh
+    usuario: lab-ssh
     rol: lectura
