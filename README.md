@@ -42,6 +42,7 @@ el nombre del equipo en mayúsculas y los guiones cambiados por `_`:
 
 ```bash
 export LAB_PASS_MT_LAB='clave-del-mikrotik'
+export LAB_PASS_CISCO_LAB='clave-del-cisco'
 ```
 
 Si la variable no existe, el script pide la clave al ejecutarse (no se muestra
@@ -84,6 +85,21 @@ python lab1_inventario.py --limpiar
 | Ruta por defecto | `/ip route print terse where dst-address=0.0.0.0/0` |
 
 Cada salida se convierte en diccionario o lista antes de guardarla.
+
+**Extra multivendor (Cisco IOS).** El Cisco (`cisco-lab`, 10.60.30.203) está en
+el inventario con `rol: lectura`, así que solo se consulta. Sus comandos son
+otra entrada del mismo diccionario `COMANDOS_ESTADO`, sin ningún `if` por
+equipo:
+
+| Dato | Comando |
+|---|---|
+| Nombre del equipo | `show running-config \| include hostname` |
+| Tiempo encendido | `show version \| include uptime` |
+| Interfaces con IP | `show ip interface brief` |
+| Ruta por defecto | `show ip route 0.0.0.0` |
+
+Si el usuario de solo lectura no puede ver el running-config, el nombre se
+toma del prompt.
 
 **Reporte.** Al terminar se genera `reporte_estado.json`, con la fecha/hora y
 el estado de cada equipo (`ok` o el mensaje de error), y se imprime una tabla

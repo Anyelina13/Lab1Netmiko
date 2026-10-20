@@ -19,3 +19,10 @@ equipos:
     device_type: mikrotik_routeros
     usuario: labssh
     rol: escritura
+
+  # Extra multivendor: el Cisco es compartido y solo se consulta
+  - nombre: cisco-lab
+    host: 10.60.30.203
+    device_type: cisco_ios
+    usuario: labssh
+    rol: lectura

@@ -162,6 +162,46 @@ def mikrotik_ruta_defecto(texto):
     return ruta.get("gateway", "")
 
 
+def cisco_identidad(texto):
+    # "hostname R-Cisco" -> "R-Cisco"
+    coincidencia = re.search(r"^hostname\s+(\S+)", texto, re.MULTILINE)
+    return coincidencia.group(1) if coincidencia else ""
+
+
+def cisco_recursos(texto):
+    # "R-Cisco uptime is 2 hours, 5 minutes" -> "2 hours, 5 minutes"
+    coincidencia = re.search(r"uptime is (.+)", texto)
+    return {"uptime": coincidencia.group(1).strip() if coincidencia else ""}
+
+
+def cisco_interfaces(texto):
+    """show ip interface brief -> solo las interfaces que tienen IP.
+
+    Columnas: Interface  IP-Address  OK?  Method  Status  Protocol
+    El Status puede ser "administratively down" (dos palabras), por eso el
+    protocolo se toma de la última columna y el status de lo que queda.
+    """
+    interfaces = []
+    for linea in texto.splitlines():
+        partes = linea.split()
+        if len(partes) < 6 or partes[0] == "Interface" or partes[1] == "unassigned":
+            continue
+        interfaces.append({
+            "interfaz": partes[0],
+            "ip": partes[1],
+            "deshabilitada": "administratively" in partes[4:-1],
+        })
+    return interfaces
+
+
+def cisco_ruta_defecto(texto):
+    # En "Routing Descriptor Blocks" la ruta en uso va marcada con "* <ip>"
+    if "not in table" in texto:
+        return ""
+    coincidencia = re.search(r"\*\s+(\d+\.\d+\.\d+\.\d+)", texto)
+    return coincidencia.group(1) if coincidencia else ""
+
+
 # Comandos de lectura por device_type: dato -> (comando, función que lo procesa).
 # Para otro fabricante basta con agregar su entrada aquí.
 COMANDOS_ESTADO = {
@@ -173,6 +213,12 @@ COMANDOS_ESTADO = {
             "/ip route print terse where dst-address=0.0.0.0/0",
             mikrotik_ruta_defecto,
         ),
+    },
+    "cisco_ios": {
+        "identidad": ("show running-config | include hostname", cisco_identidad),
+        "recursos": ("show version | include uptime", cisco_recursos),
+        "interfaces": ("show ip interface brief", cisco_interfaces),
+        "gateway": ("show ip route 0.0.0.0", cisco_ruta_defecto),
     },
 }
 
@@ -315,6 +361,10 @@ def conectar_equipo(equipo, clave, estudiante=None, limpiar=False):
         with ConnectHandler(**parametros) as conexion:
             resultado["prompt"] = conexion.find_prompt()
             resultado.update(recolectar_estado(conexion, equipo["device_type"]))
+            # Un usuario de solo lectura en Cisco puede no ver el running-config;
+            # en ese caso el nombre se saca del prompt (R-Cisco> o R-Cisco#)
+            if not resultado["identidad"]:
+                resultado["identidad"] = resultado["prompt"].rstrip("#>")
 
             if (equipo["rol"] == "escritura" and estudiante
                     and equipo["device_type"] == "mikrotik_routeros"):
