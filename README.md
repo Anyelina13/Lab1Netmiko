@@ -101,6 +101,18 @@ equipo:
 Si el usuario de solo lectura no puede ver el running-config, el nombre se
 toma del prompt.
 
+**Extra REST (SSH vs. REST).** Para el MikroTik, si la conexión SSH funcionó,
+el script vuelve a pedir los mismos datos por la API REST
+(`https://10.60.30.202/rest`, con `requests` y el mismo usuario y clave):
+`/system/identity`, `/system/resource`, `/ip/address` y `/ip/route`. En el
+reporte, dentro de `rest`, quedan los datos obtenidos y una `comparacion` dato
+por dato (`identidad`, `version`, `interfaces`, `gateway`) con el valor por SSH,
+el valor por REST y si coinciden. El uptime no se compara porque cambia entre
+una consulta y otra, y la IP de mi loopback tampoco, porque SSH la lee antes
+de crearla o borrarla. Si REST falla, se anota el error ahí sin afectar el
+estado SSH del equipo. El certificado del router es autofirmado, por eso se
+usa `verify=False`.
+
 **Reporte.** Al terminar se genera `reporte_estado.json`, con la fecha/hora y
 el estado de cada equipo (`ok` o el mensaje de error), y se imprime una tabla
 con equipo, IP, estado, cantidad de interfaces y gateway.
@@ -115,6 +127,36 @@ estudiantes.
 Con `--limpiar` pasa lo contrario: se consulta, se borran solo la IP
 `10.253.0.<N>/32` y el bridge `lo-ssh-<N>` (si existen) y se verifica que ya no
 estén. Si no había nada, sale `sin cambios`.
+
+## Ejemplo del reporte
+
+Estructura de `reporte_estado.json` (valores de ejemplo):
+
+```json
+{
+  "generado": "2026-10-20T18:05:12",
+  "equipos": [
+    {
+      "nombre": "mt-lab",
+      "host": "10.60.30.202",
+      "device_type": "mikrotik_routeros",
+      "fecha": "2026-10-20T18:05:03",
+      "estado": "ok",
+      "identidad": "MikroTik",
+      "recursos": {"uptime": "3h2m10s", "version": "7.16 (stable)"},
+      "interfaces": [{"interfaz": "ether1", "ip": "10.60.30.202/24", "deshabilitada": false}],
+      "gateway": "10.60.30.1",
+      "configuracion": {"cambio": "sin cambios", "bridge": "lo-ssh-7", "ip": "10.253.0.7/32"},
+      "rest": {"estado": "ok", "datos": {}, "comparacion": {"todo_coincide": true}}
+    },
+    {
+      "nombre": "cisco-lab",
+      "host": "10.60.30.203",
+      "estado": "error: autenticación, usuario o clave de 'labssh' incorrectos"
+    }
+  ]
+}
+```
 
 ## Uso de IA
 

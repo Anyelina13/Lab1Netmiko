@@ -8,3 +8,7 @@ __pycache__/
 .env
 *.env
 claves.txt
+
+# La carpeta logs/ sí se sube (session_log de cada equipo, sin contraseñas);
+# solo se ignoran logs sueltos de pruebas
+*.log.tmp

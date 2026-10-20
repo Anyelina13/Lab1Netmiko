@@ -16,6 +16,8 @@ import getpass
 import json
 from datetime import datetime
 
+import requests
+import urllib3
 import yaml
 from netmiko import ConnectHandler
 from netmiko.exceptions import (
@@ -315,6 +317,101 @@ def limpiar_loopback(conexion, estudiante):
     return {"cambio": "eliminado", "comandos": comandos, **objetos}
 
 
+# ---------------------------------------------------------------------------
+# Extra: estado del MikroTik por la API REST y comparación con SSH
+# ---------------------------------------------------------------------------
+
+# El MikroTik del laboratorio usa un certificado propio (autofirmado)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def estado_rest(equipo, clave):
+    """Pide los mismos 4 datos por https://<host>/rest con requests.
+
+    Devuelve un dict con las mismas claves que recolectar_estado para poder
+    compararlos uno a uno.
+    """
+    base = f"https://{equipo['host']}/rest"
+    sesion = requests.Session()
+    sesion.auth = (equipo["usuario"], clave)
+    sesion.verify = False
+
+    def pedir(ruta, **filtros):
+        respuesta = sesion.get(f"{base}{ruta}", params=filtros, timeout=10)
+        respuesta.raise_for_status()
+        return respuesta.json()
+
+    identidad = pedir("/system/identity")
+    recursos = pedir("/system/resource")
+    direcciones = pedir("/ip/address")
+    rutas = pedir("/ip/route", **{"dst-address": "0.0.0.0/0"})
+
+    # REST devuelve los booleanos como texto "true"/"false"
+    activas = [r for r in rutas if r.get("active") == "true"]
+    ruta = (activas or rutas or [{}])[0]
+    return {
+        "identidad": identidad.get("name", ""),
+        "recursos": {
+            "uptime": recursos.get("uptime", ""),
+            "version": recursos.get("version", ""),
+        },
+        "interfaces": [
+            {
+                "interfaz": d.get("interface", ""),
+                "ip": d.get("address", ""),
+                "deshabilitada": d.get("disabled") == "true",
+            }
+            for d in direcciones
+        ],
+        "gateway": ruta.get("gateway", ""),
+    }
+
+
+def comparar_ssh_rest(ssh, rest, ignorar=()):
+    """Compara dato por dato lo que dio SSH contra lo que dio REST.
+
+    El uptime no se compara porque cambia entre una consulta y la otra.
+    'ignorar' son IPs que no se comparan: mi loopback, porque SSH leyó las
+    interfaces antes de crearla o borrarla y REST las lee después.
+    """
+    def ips(interfaces):
+        return sorted(i["ip"] for i in interfaces if i["ip"] not in ignorar)
+
+    pares = {
+        "identidad": (ssh["identidad"], rest["identidad"]),
+        "version": (ssh["recursos"]["version"], rest["recursos"]["version"]),
+        "interfaces": (ips(ssh["interfaces"]), ips(rest["interfaces"])),
+        "gateway": (ssh["gateway"], rest["gateway"]),
+    }
+    comparacion = {
+        dato: {"ssh": valor_ssh, "rest": valor_rest, "coincide": valor_ssh == valor_rest}
+        for dato, (valor_ssh, valor_rest) in pares.items()
+    }
+    comparacion["todo_coincide"] = all(c["coincide"] for c in comparacion.values())
+    return comparacion
+
+
+def agregar_rest(resultado, equipo, clave):
+    """Agrega al resultado del equipo el estado por REST y la comparación.
+
+    Un error en REST no cambia el estado SSH del equipo: solo se anota.
+    """
+    ignorar = ()
+    if "configuracion" in resultado:
+        ignorar = (resultado["configuracion"]["ip"],)
+
+    try:
+        rest = estado_rest(equipo, clave)
+    except requests.RequestException as error:
+        resultado["rest"] = {"estado": f"error: {type(error).__name__}: {error}"}
+        return
+    resultado["rest"] = {
+        "estado": "ok",
+        "datos": rest,
+        "comparacion": comparar_ssh_rest(resultado, rest, ignorar),
+    }
+
+
 def recolectar_estado(conexion, device_type):
     """Manda los comandos de lectura del device_type y devuelve un dict."""
     comandos = COMANDOS_ESTADO.get(device_type)
@@ -463,6 +560,15 @@ def main():
             if "configuracion" in resultado:
                 config = resultado["configuracion"]
                 print(f"  Configuración {config['bridge']} ({config['ip']}): {config['cambio']}")
+            # Extra REST: solo MikroTik y solo si el SSH funcionó
+            if equipo["device_type"] == "mikrotik_routeros":
+                agregar_rest(resultado, equipo, clave)
+                rest = resultado["rest"]
+                if rest["estado"] == "ok":
+                    iguales = rest["comparacion"]["todo_coincide"]
+                    print(f"  REST: {'coincide con SSH' if iguales else 'hay diferencias con SSH'}")
+                else:
+                    print(f"  REST: {rest['estado']}")
         else:
             print(f"  [FALLO] {resultado['estado']}")
 
