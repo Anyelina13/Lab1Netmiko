@@ -4,9 +4,11 @@ Inventario, estado y configuración segura con Python + SSH (Netmiko).
 
 Uso:
     export LAB_PASS_MT_LAB='la-clave'     # opcional, si no existe se pide
-    python lab1_inventario.py
+    python lab1_inventario.py             # estado + asegurar mi loopback
+    python lab1_inventario.py --limpiar   # estado + borrar solo mis objetos
 """
 
+import argparse
 import os
 import re
 import sys
@@ -237,6 +239,36 @@ def asegurar_loopback(conexion, estudiante):
     return {"cambio": "creado", "comandos": comandos, **objetos}
 
 
+def limpiar_loopback(conexion, estudiante):
+    """Borra solo mis objetos (la IP 10.253.0.<N>/32 y el bridge lo-ssh-<N>).
+
+    Igual que al crear: consulta, borra solo lo que exista y verifica.
+    Los find llevan el nombre y la IP exactos, así nunca se borra nada ajeno.
+    """
+    objetos = objetos_propios(estudiante)
+    antes = consultar_loopback(conexion, objetos)
+
+    comandos = []
+    # Primero la IP y después el bridge al que está asignada
+    if antes["ip"]:
+        comandos.append(
+            f'/ip address remove [find where address="{objetos["ip"]}" '
+            f'and interface="{objetos["bridge"]}"]')
+    if antes["bridge"]:
+        comandos.append(
+            f'/interface bridge remove [find where name="{objetos["bridge"]}"]')
+
+    if not comandos:
+        return {"cambio": "sin cambios (no había nada que borrar)", **objetos}
+
+    conexion.send_config_set(comandos)
+
+    despues = consultar_loopback(conexion, objetos)
+    if despues["bridge"] or despues["ip"]:
+        raise RuntimeError(f"No se pudieron borrar mis objetos: {despues}")
+    return {"cambio": "eliminado", "comandos": comandos, **objetos}
+
+
 def recolectar_estado(conexion, device_type):
     """Manda los comandos de lectura del device_type y devuelve un dict."""
     comandos = COMANDOS_ESTADO.get(device_type)
@@ -250,11 +282,11 @@ def recolectar_estado(conexion, device_type):
     return estado
 
 
-def conectar_equipo(equipo, clave, estudiante=None):
+def conectar_equipo(equipo, clave, estudiante=None, limpiar=False):
     """Se conecta por SSH a un equipo y devuelve un diccionario con el resultado.
 
     Si el equipo es un MikroTik con rol escritura y se conoce el estudiante,
-    además revisa la loopback lo-ssh-<N>.
+    además asegura la loopback lo-ssh-<N> (o la borra si limpiar=True).
 
     Los errores se atrapan aquí mismo, por equipo: si uno falla se anota el
     mensaje en "estado" y el ciclo de main() sigue con los demás.
@@ -286,7 +318,10 @@ def conectar_equipo(equipo, clave, estudiante=None):
 
             if (equipo["rol"] == "escritura" and estudiante
                     and equipo["device_type"] == "mikrotik_routeros"):
-                resultado["configuracion"] = asegurar_loopback(conexion, estudiante)
+                if limpiar:
+                    resultado["configuracion"] = limpiar_loopback(conexion, estudiante)
+                else:
+                    resultado["configuracion"] = asegurar_loopback(conexion, estudiante)
     # De lo más específico a lo más general
     except NetmikoTimeoutException:
         resultado["estado"] = "error: timeout, no hubo respuesta del equipo (IP, SSH o red)"
@@ -337,7 +372,18 @@ def imprimir_tabla(resultados):
         print(formato(fila))
 
 
+def leer_argumentos():
+    parser = argparse.ArgumentParser(
+        description="Lab 1: estado de los equipos y loopback propia en el MikroTik")
+    parser.add_argument(
+        "--limpiar", action="store_true",
+        help="borra solo mis objetos (lo-ssh-<N> y 10.253.0.<N>/32) en vez de crearlos")
+    return parser.parse_args()
+
+
 def main():
+    argumentos = leer_argumentos()
+
     try:
         equipos = cargar_inventario(ARCHIVO_INVENTARIO)
         estudiante = cargar_estudiante(ARCHIVO_INVENTARIO)
@@ -348,6 +394,9 @@ def main():
     if estudiante is None:
         print("[AVISO] Falta 'estudiante' (numero_lista y nombre) en el inventario: "
               "no se va a tocar la configuración de ningún equipo.")
+    elif argumentos.limpiar:
+        print(f"Modo --limpiar: se borran solo lo-ssh-{estudiante['numero_lista']} "
+              f"y 10.253.0.{estudiante['numero_lista']}/32.")
 
     os.makedirs(CARPETA_LOGS, exist_ok=True)
 
@@ -355,7 +404,7 @@ def main():
     for equipo in equipos:
         print(f"Conectando a {equipo['nombre']} ({equipo['host']})...")
         clave = obtener_clave(equipo)
-        resultado = conectar_equipo(equipo, clave, estudiante)
+        resultado = conectar_equipo(equipo, clave, estudiante, argumentos.limpiar)
         resultados.append(resultado)
 
         if resultado["estado"] == "ok":

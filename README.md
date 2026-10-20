@@ -65,6 +65,12 @@ export LAB_PASS_MT_LAB=mala
 python lab1_inventario.py
 ```
 
+Para borrar lo que el script creó en el MikroTik (solo mis objetos):
+
+```bash
+python lab1_inventario.py --limpiar
+```
+
 ## Qué hace con cada equipo
 
 **Estado (solo lectura).** Los comandos están en el diccionario
@@ -89,6 +95,10 @@ se consulta si existe y solo se crea lo que falta; después se vuelve a
 consultar para verificar. En una segunda ejecución sale `sin cambios`. Las
 consultas filtran por el nombre exacto, así que no se tocan objetos de otros
 estudiantes.
+
+Con `--limpiar` pasa lo contrario: se consulta, se borran solo la IP
+`10.253.0.<N>/32` y el bridge `lo-ssh-<N>` (si existen) y se verifica que ya no
+estén. Si no había nada, sale `sin cambios`.
 
 ## Uso de IA
 
